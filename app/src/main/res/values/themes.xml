@@ -1,0 +1,12 @@
+<resources>
+    <!--
+      Dark first. The window itself starts dark grey so there is never a white
+      flash before Compose draws. Compose handles the real colours from there.
+    -->
+    <style name="Theme.ElendheimPictureEditor" parent="@android:style/Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@color/elendheim_bg</item>
+        <item name="android:statusBarColor">@color/elendheim_bg</item>
+        <item name="android:navigationBarColor">@color/elendheim_bg</item>
+        <item name="android:colorBackground">@color/elendheim_bg</item>
+    </style>
+</resources>

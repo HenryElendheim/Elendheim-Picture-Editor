@@ -1,0 +1,8 @@
+<resources>
+    <!-- The Elendheim brand mood: dark grey base with a soft red accent. -->
+    <color name="elendheim_bg">#12100F</color>
+    <color name="elendheim_surface">#1C1A19</color>
+    <color name="elendheim_red">#D65A5A</color>
+    <color name="black">#000000</color>
+    <color name="white">#FFFFFF</color>
+</resources>

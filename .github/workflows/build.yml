@@ -1,0 +1,72 @@
+name: Build APK
+
+# Builds the app on every push to the working branches. Pushing a version tag
+# such as v1.0 also publishes a GitHub Release with the APK attached, so the
+# app can be installed straight from the releases page.
+on:
+  push:
+    branches: [testing, main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed so the tag build can create the release.
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the code
+        uses: actions/checkout@v4
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Cache Gradle
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.gradle/caches
+            ~/.gradle/wrapper
+          key: gradle-${{ runner.os }}-${{ hashFiles('**/*.gradle*', '**/gradle-wrapper.properties') }}
+          restore-keys: gradle-${{ runner.os }}-
+
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Build the release APK
+        run: ./gradlew assembleRelease --stacktrace
+
+      - name: Collect the APK with a friendly name
+        run: |
+          mkdir -p out
+          cp app/build/outputs/apk/release/app-release.apk "out/Elendheim-Picture-Editor.apk"
+
+      - name: Upload the APK as a build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Elendheim-Picture-Editor-APK
+          path: out/Elendheim-Picture-Editor.apk
+
+      - name: Publish a release for version tags
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          gh release create "$VERSION" \
+            "out/Elendheim-Picture-Editor.apk#Elendheim Picture Editor ${VERSION}.apk" \
+            --title "Elendheim Picture Editor ${VERSION}" \
+            --notes "Elendheim Picture Editor is a private, on-device photo editor for Android.
+
+          This app does three things:
+          - Adjusts and filters your photos with live sliders and one-tap looks
+          - Crops, rotates and resizes with ready-made social presets
+          - Saves the result to your gallery as a new file, leaving the original untouched
+
+          Install by downloading the APK below."

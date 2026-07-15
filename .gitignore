@@ -1,0 +1,15 @@
+# Build outputs
+.gradle/
+build/
+app/build/
+
+# Local SDK pointer, never shared
+local.properties
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+captures/
+
+# OS noise
+.DS_Store
