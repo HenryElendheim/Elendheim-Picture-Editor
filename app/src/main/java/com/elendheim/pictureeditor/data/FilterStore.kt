@@ -4,6 +4,7 @@ import android.content.Context
 import android.net.Uri
 import com.elendheim.pictureeditor.model.FilterPack
 import com.elendheim.pictureeditor.model.FilterPreset
+import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.json.Json
 import java.io.File
 

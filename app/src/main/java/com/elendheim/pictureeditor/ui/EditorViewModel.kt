@@ -35,6 +35,9 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     private val filterStore = FilterStore(app)
     private val settingsStore = SettingsStore(app)
 
+    // The application context, used for loading and saving off the UI thread.
+    private val context get() = getApplication<Application>()
+
     // --- image + edit state -------------------------------------------------
     var sourceUri by mutableStateOf<Uri?>(null)
         private set
@@ -68,7 +71,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         busy = true
         viewModelScope.launch {
             val bmp = withContext(Dispatchers.IO) {
-                ImageLoader.loadPreview(getApplication(), uri)
+                ImageLoader.loadPreview(context, uri)
             }
             if (bmp != null) {
                 sourceUri = uri
@@ -171,11 +174,11 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         busy = true
         viewModelScope.launch {
             val saved = withContext(Dispatchers.IO) {
-                val full = ImageLoader.loadFull(getApplication(), uri) ?: return@withContext null
+                val full = ImageLoader.loadFull(context, uri) ?: return@withContext null
                 val rendered = ImageEngine.render(full, editState)
                 full.recycle()
                 val stem = "Elendheim_" + System.currentTimeMillis()
-                val out = GalleryExporter.save(getApplication(), rendered, format, quality, stem)
+                val out = GalleryExporter.save(context, rendered, format, quality, stem)
                 rendered.recycle()
                 out
             }
