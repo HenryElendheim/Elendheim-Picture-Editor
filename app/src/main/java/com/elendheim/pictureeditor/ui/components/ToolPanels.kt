@@ -45,11 +45,16 @@ fun AdjustPanel(
     }
 }
 
-/** Rotate, flip and pick an aspect ratio. Crop is a centred cut to the ratio. */
+/** Rotate, flip, pick an aspect ratio, and open the interactive crop tool. */
 @Composable
 fun TransformPanel(
     transform: Transform,
-    onChange: (Transform) -> Unit,
+    onRotateLeft: () -> Unit,
+    onRotateRight: () -> Unit,
+    onFlipH: () -> Unit,
+    onFlipV: () -> Unit,
+    onAspect: (AspectPreset) -> Unit,
+    onOpenCrop: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier) {
@@ -57,14 +62,12 @@ fun TransformPanel(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
-            OutlinedButton(
-                onClick = { onChange(transform.copy(rotationDeg = (transform.rotationDeg - 90f + 360f) % 360f)) },
-                modifier = Modifier.weight(1f)
-            ) { Text("Rotate left") }
-            OutlinedButton(
-                onClick = { onChange(transform.copy(rotationDeg = (transform.rotationDeg + 90f) % 360f)) },
-                modifier = Modifier.weight(1f)
-            ) { Text("Rotate right") }
+            OutlinedButton(onClick = onRotateLeft, modifier = Modifier.weight(1f)) {
+                Text("Rotate left", maxLines = 1)
+            }
+            OutlinedButton(onClick = onRotateRight, modifier = Modifier.weight(1f)) {
+                Text("Rotate right", maxLines = 1)
+            }
         }
         Row(
             Modifier.fillMaxWidth().padding(top = 8.dp),
@@ -72,17 +75,22 @@ fun TransformPanel(
         ) {
             FilterChip(
                 selected = transform.flipH,
-                onClick = { onChange(transform.copy(flipH = !transform.flipH)) },
-                label = { Text("Flip H") },
+                onClick = onFlipH,
+                label = { Text("Flip H", maxLines = 1) },
                 modifier = Modifier.weight(1f)
             )
             FilterChip(
                 selected = transform.flipV,
-                onClick = { onChange(transform.copy(flipV = !transform.flipV)) },
-                label = { Text("Flip V") },
+                onClick = onFlipV,
+                label = { Text("Flip V", maxLines = 1) },
                 modifier = Modifier.weight(1f)
             )
         }
+        FilledTonalButton(
+            onClick = onOpenCrop,
+            modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+        ) { Text("Open crop tool - move and zoom", maxLines = 1) }
+
         SectionLabel("Aspect ratio", Modifier.padding(top = 10.dp))
         Row(
             Modifier
@@ -93,8 +101,8 @@ fun TransformPanel(
             AspectPreset.values().forEach { preset ->
                 FilterChip(
                     selected = transform.aspect == preset,
-                    onClick = { onChange(transform.copy(aspect = preset)) },
-                    label = { Text(preset.label) },
+                    onClick = { onAspect(preset) },
+                    label = { Text(preset.label, maxLines = 1, softWrap = false) },
                     modifier = Modifier.semantics { contentDescription = "${preset.label}. ${preset.use}" }
                 )
             }

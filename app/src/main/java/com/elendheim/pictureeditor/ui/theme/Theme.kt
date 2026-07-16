@@ -22,7 +22,14 @@ private val BackgroundHC = Color(0xFF000000)
 private fun elendheimScheme(highContrast: Boolean) = darkColorScheme(
     primary = if (highContrast) SoftRedHC else SoftRed,
     onPrimary = Color(0xFF1A0E0E),
+    // Containers carry the red accent too, so selected chips and buttons read
+    // red instead of the default grey blue.
+    primaryContainer = if (highContrast) Color(0xFF7A2E2E) else Color(0xFF5A2626),
+    onPrimaryContainer = if (highContrast) OnDarkHC else Color(0xFFF7DADA),
     secondary = if (highContrast) SoftRedHC else SoftRed,
+    secondaryContainer = if (highContrast) Color(0xFF7A2E2E) else Color(0xFF4E2020),
+    onSecondaryContainer = if (highContrast) OnDarkHC else Color(0xFFF7DADA),
+    tertiary = if (highContrast) SoftRedHC else SoftRed,
     background = if (highContrast) BackgroundHC else Background,
     onBackground = if (highContrast) OnDarkHC else OnDark,
     surface = if (highContrast) Color(0xFF141312) else Surface,

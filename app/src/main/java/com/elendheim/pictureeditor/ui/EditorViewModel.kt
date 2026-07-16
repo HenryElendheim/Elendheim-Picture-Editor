@@ -13,6 +13,7 @@ import com.elendheim.pictureeditor.data.AppSettings
 import com.elendheim.pictureeditor.data.FilterStore
 import com.elendheim.pictureeditor.data.SettingsStore
 import com.elendheim.pictureeditor.engine.ImageEngine
+import com.elendheim.pictureeditor.engine.PlacedLayer
 import com.elendheim.pictureeditor.export.ExportFormat
 import com.elendheim.pictureeditor.export.GalleryExporter
 import com.elendheim.pictureeditor.model.AdjustParams
@@ -56,6 +57,12 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     val canUndo: Boolean get() = history.isNotEmpty()
     val hasImage: Boolean get() = previewBitmap != null
 
+    // --- added picture layers ----------------------------------------------
+    val layers = mutableStateListOf<LayerItem>()
+    var selectedLayerId by mutableStateOf<String?>(null)
+        private set
+    val selectedLayer: LayerItem? get() = layers.firstOrNull { it.id == selectedLayerId }
+
     // --- filters + settings -------------------------------------------------
     val customFilters = mutableStateListOf<FilterPreset>()
     var settings by mutableStateOf(AppSettings())
@@ -78,6 +85,8 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 previewBitmap = bmp
                 editState = EditState()
                 history.clear()
+                layers.clear()
+                selectedLayerId = null
             } else {
                 message = "Could not open that image"
             }
@@ -104,6 +113,98 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     fun setVignette(v: Vignette) {
         pushHistory()
         editState = editState.copy(vignette = v)
+    }
+
+    // --- transform helpers --------------------------------------------------
+    // Rotating or flipping would put an existing crop in the wrong place, so
+    // the crop is cleared back to the full frame when the geometry changes.
+    fun rotateBy(deltaDeg: Float) {
+        val t = editState.transform
+        val next = (t.rotationDeg + deltaDeg + 360f) % 360f
+        pushHistory()
+        editState = editState.copy(transform = t.copy(rotationDeg = next, crop = null))
+    }
+
+    fun toggleFlipH() {
+        pushHistory()
+        val t = editState.transform
+        editState = editState.copy(transform = t.copy(flipH = !t.flipH, crop = null))
+    }
+
+    fun toggleFlipV() {
+        pushHistory()
+        val t = editState.transform
+        editState = editState.copy(transform = t.copy(flipV = !t.flipV, crop = null))
+    }
+
+    // Picking an aspect frames the middle of the photo straight away; the crop
+    // tool can then refine it. Original clears the crop.
+    fun setAspect(preset: com.elendheim.pictureeditor.model.AspectPreset) {
+        val base = previewBitmap ?: return
+        val ratio = preset.ratio
+        val t = editState.transform
+        if (ratio == null) {
+            pushHistory()
+            editState = editState.copy(transform = t.copy(aspect = preset, crop = null))
+            return
+        }
+        // Measure the rotated / flipped base so the centred crop is correct.
+        val rotated = ImageEngine.rotateFlip(base, t)
+        val rect = ImageEngine.centeredCrop(rotated.width, rotated.height, ratio)
+        if (rotated !== base) rotated.recycle()
+        pushHistory()
+        editState = editState.copy(transform = t.copy(aspect = preset, crop = rect))
+    }
+
+    // Called by the crop tool with the region the user framed.
+    fun setCrop(rect: com.elendheim.pictureeditor.model.NormRect) {
+        pushHistory()
+        editState = editState.copy(transform = editState.transform.copy(crop = rect))
+    }
+
+    // --- added picture layers ----------------------------------------------
+    fun addLayer(uri: Uri) {
+        busy = true
+        viewModelScope.launch {
+            val bmp = withContext(Dispatchers.IO) {
+                ImageLoader.loadPreview(context, uri, maxDim = 1200)
+            }
+            if (bmp != null) {
+                val item = LayerItem(id = UUID.randomUUID().toString(), uri = uri, bitmap = bmp)
+                layers.add(item)
+                selectedLayerId = item.id
+                message = "Picture added. Drag to move, pinch to resize."
+            } else {
+                message = "Could not add that picture"
+            }
+            busy = false
+        }
+    }
+
+    fun selectLayer(id: String?) {
+        selectedLayerId = id
+    }
+
+    fun updateLayer(id: String, center: com.elendheim.pictureeditor.model.NormPoint? = null, scale: Float? = null, rotationDeg: Float? = null) {
+        val index = layers.indexOfFirst { it.id == id }
+        if (index < 0) return
+        val current = layers[index]
+        layers[index] = current.copy(
+            center = center ?: current.center,
+            scale = scale ?: current.scale,
+            rotationDeg = rotationDeg ?: current.rotationDeg
+        )
+    }
+
+    fun deleteSelectedLayer() {
+        val id = selectedLayerId ?: return
+        layers.removeAll { it.id == id }
+        selectedLayerId = null
+    }
+
+    // --- intro --------------------------------------------------------------
+    fun markIntroSeen() {
+        if (!settings.introSeen) updateSettings(settings.copy(introSeen = true))
     }
 
     fun applyFilter(preset: FilterPreset) {
@@ -171,12 +272,22 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
     // --- export -------------------------------------------------------------
     fun exportImage(format: ExportFormat, quality: Int) {
         val uri = sourceUri ?: return
+        // Snapshot the mutable state on the main thread before going to IO.
+        val state = editState
+        val layerList = layers.toList()
         busy = true
         viewModelScope.launch {
             val saved = withContext(Dispatchers.IO) {
                 val full = ImageLoader.loadFull(context, uri) ?: return@withContext null
-                val rendered = ImageEngine.render(full, editState)
+                // Reload each added picture at full quality for the final render.
+                val placed = layerList.mapNotNull { layer ->
+                    val lb = ImageLoader.loadFull(context, layer.uri, maxDim = 2048)
+                        ?: return@mapNotNull null
+                    PlacedLayer(lb, layer.center.x, layer.center.y, layer.scale, layer.rotationDeg)
+                }
+                val rendered = ImageEngine.render(full, state, placed)
                 full.recycle()
+                placed.forEach { it.bitmap.recycle() }
                 val stem = "Elendheim_" + System.currentTimeMillis()
                 val out = GalleryExporter.save(context, rendered, format, quality, stem)
                 rendered.recycle()

@@ -12,10 +12,13 @@ data class Transform(
     val rotationDeg: Float = 0f,
     val flipH: Boolean = false,
     val flipV: Boolean = false,
-    val aspect: AspectPreset = AspectPreset.ORIGINAL
+    val aspect: AspectPreset = AspectPreset.ORIGINAL,
+    // The kept region after rotation and flips. null means the whole image.
+    val crop: NormRect? = null
 ) {
     val isNeutral: Boolean
-        get() = rotationDeg == 0f && !flipH && !flipV && aspect == AspectPreset.ORIGINAL
+        get() = rotationDeg == 0f && !flipH && !flipV &&
+            aspect == AspectPreset.ORIGINAL && (crop == null || crop.isFull)
 }
 
 /**

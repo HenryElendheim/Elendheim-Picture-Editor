@@ -11,14 +11,26 @@ import android.graphics.RadialGradient
 import android.graphics.RectF
 import android.graphics.Shader
 import com.elendheim.pictureeditor.model.AdjustParams
-import com.elendheim.pictureeditor.model.AspectPreset
 import com.elendheim.pictureeditor.model.EditState
+import com.elendheim.pictureeditor.model.NormRect
 import com.elendheim.pictureeditor.model.Transform
 import com.elendheim.pictureeditor.model.Vignette
 import kotlin.math.cos
 import kotlin.math.hypot
 import kotlin.math.pow
 import kotlin.math.sin
+
+/**
+ * One added picture, ready to be drawn on the base. Positions are fractions of
+ * the base image so the same placement works at preview and full resolution.
+ */
+data class PlacedLayer(
+    val bitmap: Bitmap,
+    val cx: Float,
+    val cy: Float,
+    val scale: Float,
+    val rotationDeg: Float
+)
 
 /**
  * The rendering engine. It knows nothing about the UI; give it a source bitmap
@@ -137,8 +149,8 @@ object ImageEngine {
      * export (pass the full size bitmap) and can also make a preview bitmap.
      * The source is never modified; a brand new bitmap comes back.
      */
-    fun render(source: Bitmap, state: EditState): Bitmap {
-        val geo = applyTransform(source, state.transform)
+    fun render(source: Bitmap, state: EditState, layers: List<PlacedLayer> = emptyList()): Bitmap {
+        val geo = geometry(source, state.transform)
         val out = Bitmap.createBitmap(geo.width, geo.height, Bitmap.Config.ARGB_8888)
         val canvas = Canvas(out)
         val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
@@ -149,54 +161,87 @@ object ImageEngine {
         if (!state.vignette.isNeutral) {
             drawVignette(canvas, out.width, out.height, state.vignette)
         }
+        // Added pictures sit on top of the finished base.
+        if (layers.isNotEmpty()) {
+            composite(canvas, out.width, out.height, layers)
+        }
         // Recycle the intermediate if we made a new one.
         if (geo !== source) geo.recycle()
         return out
     }
 
     /**
-     * Public geometry pass for the preview: rotate, flip and crop only, no
-     * colour. The live preview colours are applied on top with a colour filter
-     * so dragging a slider never has to rebuild this bitmap.
+     * The base geometry for the preview: rotate, flip and crop, but no colour.
+     * The live preview colours are applied on top with a colour filter so
+     * dragging a slider never has to rebuild this bitmap.
      */
-    fun geometry(src: Bitmap, t: Transform): Bitmap = applyTransform(src, t)
-
-    // Rotate, flip, then centre crop to the chosen aspect ratio.
-    private fun applyTransform(src: Bitmap, t: Transform): Bitmap {
-        var work = src
-        if (t.rotationDeg != 0f || t.flipH || t.flipV) {
-            val m = Matrix()
-            if (t.flipH) m.postScale(-1f, 1f)
-            if (t.flipV) m.postScale(1f, -1f)
-            if (t.rotationDeg != 0f) m.postRotate(t.rotationDeg)
-            work = Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true)
+    fun geometry(src: Bitmap, t: Transform): Bitmap {
+        val rotated = rotateFlip(src, t)
+        val crop = t.crop
+        if (crop == null || crop.isFull) {
+            return if (rotated === src) copyOf(src) else rotated
         }
-        val ratio = t.aspect.ratio ?: return if (work === src) copyOf(src) else work
-        val cropped = centerCrop(work, ratio)
-        if (work !== src && work !== cropped) work.recycle()
+        val cropped = applyCrop(rotated, crop)
+        if (rotated !== src && rotated !== cropped) rotated.recycle()
         return cropped
+    }
+
+    /** Rotation and flips only, no crop. Used by the interactive crop tool. */
+    fun rotateFlip(src: Bitmap, t: Transform): Bitmap {
+        if (t.rotationDeg == 0f && !t.flipH && !t.flipV) return src
+        val m = Matrix()
+        if (t.flipH) m.postScale(-1f, 1f)
+        if (t.flipV) m.postScale(1f, -1f)
+        if (t.rotationDeg != 0f) m.postRotate(t.rotationDeg)
+        return Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true)
+    }
+
+    // Cut the fractional rectangle out of the bitmap.
+    private fun applyCrop(src: Bitmap, rect: NormRect): Bitmap {
+        val x = (rect.left * src.width).toInt().coerceIn(0, src.width - 1)
+        val y = (rect.top * src.height).toInt().coerceIn(0, src.height - 1)
+        val w = (rect.width * src.width).toInt().coerceIn(1, src.width - x)
+        val h = (rect.height * src.height).toInt().coerceIn(1, src.height - y)
+        return Bitmap.createBitmap(src, x, y, w, h)
     }
 
     // Copy so callers can always safely recycle the intermediate result.
     private fun copyOf(src: Bitmap): Bitmap = src.copy(Bitmap.Config.ARGB_8888, false)
 
-    // Largest centred rectangle of the target ratio that fits the bitmap.
-    private fun centerCrop(src: Bitmap, ratio: Float): Bitmap {
-        val srcRatio = src.width.toFloat() / src.height.toFloat()
-        val w: Int
-        val h: Int
-        if (srcRatio > ratio) {
-            // Source is too wide -> trim the sides.
-            h = src.height
-            w = (h * ratio).toInt().coerceAtMost(src.width)
+    /**
+     * A centred crop rectangle of the given ratio for a fresh aspect pick, so
+     * choosing "Square" immediately frames the middle of the photo.
+     */
+    fun centeredCrop(imgWidth: Int, imgHeight: Int, ratio: Float): NormRect {
+        val imgRatio = imgWidth.toFloat() / imgHeight.toFloat()
+        return if (imgRatio > ratio) {
+            // Image is wider than the target -> keep full height, trim sides.
+            val w = ratio / imgRatio
+            val inset = (1f - w) / 2f
+            NormRect(inset, 0f, 1f - inset, 1f)
         } else {
-            // Source is too tall -> trim the top and bottom.
-            w = src.width
-            h = (w / ratio).toInt().coerceAtMost(src.height)
+            // Image is taller -> keep full width, trim top and bottom.
+            val h = imgRatio / ratio
+            val inset = (1f - h) / 2f
+            NormRect(0f, inset, 1f, 1f - inset)
         }
-        val x = (src.width - w) / 2
-        val y = (src.height - h) / 2
-        return Bitmap.createBitmap(src, x, y, w, h)
+    }
+
+    // Draw each added picture layer over the base, centred and scaled.
+    private fun composite(canvas: Canvas, w: Int, h: Int, layers: List<PlacedLayer>) {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+        for (layer in layers) {
+            val targetW = layer.scale * w
+            val targetH = targetW * layer.bitmap.height / layer.bitmap.width
+            val m = Matrix()
+            // Scale the layer bitmap to its on-screen size.
+            m.postScale(targetW / layer.bitmap.width, targetH / layer.bitmap.height)
+            // Rotate around the layer centre.
+            m.postRotate(layer.rotationDeg, targetW / 2f, targetH / 2f)
+            // Move so the layer centre lands on its normalised position.
+            m.postTranslate(layer.cx * w - targetW / 2f, layer.cy * h - targetH / 2f)
+            canvas.drawBitmap(layer.bitmap, m, paint)
+        }
     }
 
     // Paint the darkening (or lightening) toward the edges with a radial fade.
@@ -221,19 +266,5 @@ object ImageEngine {
         val paint = Paint(Paint.ANTI_ALIAS_FLAG)
         paint.shader = shader
         canvas.drawRect(RectF(0f, 0f, w.toFloat(), h.toFloat()), paint)
-    }
-
-    /**
-     * Centre crop helper exposed for the aspect preview so the on screen frame
-     * matches the exported cut exactly.
-     */
-    fun aspectCropSize(srcWidth: Int, srcHeight: Int, preset: AspectPreset): Pair<Int, Int> {
-        val ratio = preset.ratio ?: return srcWidth to srcHeight
-        val srcRatio = srcWidth.toFloat() / srcHeight.toFloat()
-        return if (srcRatio > ratio) {
-            (srcHeight * ratio).toInt() to srcHeight
-        } else {
-            srcWidth to (srcWidth / ratio).toInt()
-        }
     }
 }

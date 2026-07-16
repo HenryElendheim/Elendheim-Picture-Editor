@@ -14,7 +14,9 @@ data class AppSettings(
     val fineSliders: Boolean = false,
     val haptics: Boolean = true,
     val defaultFormat: ExportFormat = ExportFormat.JPEG,
-    val defaultQuality: Int = 95
+    val defaultQuality: Int = 95,
+    // True once the intro splash has played -> it never shows again.
+    val introSeen: Boolean = false
 )
 
 /** Saves the settings with the simplest possible storage: SharedPreferences. */
@@ -34,7 +36,8 @@ class SettingsStore(context: Context) {
         } else {
             ExportFormat.JPEG
         },
-        defaultQuality = prefs.getInt(KEY_QUALITY, 95)
+        defaultQuality = prefs.getInt(KEY_QUALITY, 95),
+        introSeen = prefs.getBoolean(KEY_INTRO, false)
     )
 
     fun save(s: AppSettings) {
@@ -46,6 +49,7 @@ class SettingsStore(context: Context) {
             .putBoolean(KEY_HAPTICS, s.haptics)
             .putString(KEY_FORMAT, s.defaultFormat.name)
             .putInt(KEY_QUALITY, s.defaultQuality)
+            .putBoolean(KEY_INTRO, s.introSeen)
             .apply()
     }
 
@@ -57,5 +61,6 @@ class SettingsStore(context: Context) {
         const val KEY_HAPTICS = "haptics"
         const val KEY_FORMAT = "default_format"
         const val KEY_QUALITY = "default_quality"
+        const val KEY_INTRO = "intro_seen"
     }
 }

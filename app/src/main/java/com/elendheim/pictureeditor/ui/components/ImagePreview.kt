@@ -3,8 +3,13 @@ package com.elendheim.pictureeditor.ui.components
 import android.graphics.Bitmap
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -17,25 +22,34 @@ import androidx.compose.ui.graphics.ColorFilter
 import androidx.compose.ui.graphics.ColorMatrix
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.semantics.contentDescription
-import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.elendheim.pictureeditor.engine.ImageEngine
 import com.elendheim.pictureeditor.model.EditState
+import com.elendheim.pictureeditor.model.NormPoint
 import com.elendheim.pictureeditor.model.Vignette
+import com.elendheim.pictureeditor.ui.LayerItem
 import kotlin.math.hypot
+import kotlin.math.roundToInt
 
 /**
- * The live canvas. Geometry (rotate / flip / crop) is baked into a small bitmap
- * only when the transform changes; the colour adjustments ride on top as a
- * colour filter so dragging a slider stays smooth. Same maths as the exporter,
- * so the preview is honest about the final result.
+ * The live canvas. It draws the edited base, then any added pictures on top.
+ * Tap an added picture to select it (red outline), drag to move it and pinch to
+ * resize or turn it. Tapping the empty canvas deselects and returns you to the
+ * base picture. The colour edit rides on top as a filter so sliders stay smooth.
  */
 @Composable
 fun ImagePreview(
     source: Bitmap,
     state: EditState,
+    layers: List<LayerItem>,
+    selectedLayerId: String?,
+    onSelectLayer: (String?) -> Unit,
+    onUpdateLayer: (String, NormPoint?, Float?, Float?) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val geo = remember(source, state.transform) {
@@ -47,14 +61,24 @@ fun ImagePreview(
         else ColorFilter.colorMatrix(ColorMatrix(ImageEngine.buildColorMatrix(state.adjust)))
     }
     val ratio = geo.width.toFloat() / geo.height.toFloat()
+    val accent = Color(0xFFD65A5A)
+    val density = LocalDensity.current
 
     BoxWithConstraints(modifier, contentAlignment = Alignment.Center) {
-        // Fit the image inside the available area while keeping its shape.
         val areaRatio = maxWidth.value / maxHeight.value
         val w = if (areaRatio > ratio) maxHeight * ratio else maxWidth
         val h = if (areaRatio > ratio) maxHeight else maxWidth / ratio
+        val wPx = with(density) { w.toPx() }
+        val hPx = with(density) { h.toPx() }
 
-        Box(Modifier.size(w, h)) {
+        Box(
+            Modifier
+                .size(w, h)
+                // A tap on empty canvas deselects any added picture.
+                .pointerInput(layers.size) {
+                    detectTapGestures { onSelectLayer(null) }
+                }
+        ) {
             Image(
                 bitmap = imageBitmap,
                 contentDescription = "Preview of your edited photo",
@@ -63,12 +87,56 @@ fun ImagePreview(
                 modifier = Modifier.size(w, h)
             )
             if (!state.vignette.isNeutral) {
-                VignetteOverlay(
-                    vignette = state.vignette,
-                    modifier = Modifier
-                        .size(w, h)
-                        .semantics { contentDescription = "Vignette overlay" }
-                )
+                VignetteOverlay(state.vignette, Modifier.size(w, h))
+            }
+
+            layers.forEach { layer ->
+                val lwPx = layer.scale * wPx
+                val lhPx = lwPx * layer.bitmap.height / layer.bitmap.width
+                val lw = with(density) { lwPx.toDp() }
+                val lh = with(density) { lhPx.toDp() }
+                val selected = layer.id == selectedLayerId
+                Box(
+                    Modifier
+                        .offset {
+                            IntOffset(
+                                (layer.center.x * wPx - lwPx / 2f).roundToInt(),
+                                (layer.center.y * hPx - lhPx / 2f).roundToInt()
+                            )
+                        }
+                        .size(lw, lh)
+                        // Gestures are read before the rotation so panning maps
+                        // straight onto the base picture's axes.
+                        .pointerInput(layer.id, selected) {
+                            if (selected) {
+                                detectTransformGestures { _, pan, zoom, rot ->
+                                    val nc = NormPoint(
+                                        (layer.center.x + pan.x / wPx).coerceIn(0f, 1f),
+                                        (layer.center.y + pan.y / hPx).coerceIn(0f, 1f)
+                                    )
+                                    onUpdateLayer(
+                                        layer.id,
+                                        nc,
+                                        (layer.scale * zoom).coerceIn(0.05f, 3f),
+                                        layer.rotationDeg + rot
+                                    )
+                                }
+                            } else {
+                                detectTapGestures { onSelectLayer(layer.id) }
+                            }
+                        }
+                        .graphicsLayer { rotationZ = layer.rotationDeg }
+                        .then(
+                            if (selected) Modifier.border(2.dp, accent) else Modifier
+                        )
+                ) {
+                    Image(
+                        bitmap = layer.bitmap.asImageBitmap(),
+                        contentDescription = "Added picture",
+                        contentScale = ContentScale.Fit,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                }
             }
         }
     }
