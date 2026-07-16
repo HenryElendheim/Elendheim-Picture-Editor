@@ -55,6 +55,7 @@ fun TransformPanel(
     onFlipV: () -> Unit,
     onAspect: (AspectPreset) -> Unit,
     onOpenCrop: () -> Unit,
+    onRestore: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     Column(modifier) {
@@ -74,13 +75,13 @@ fun TransformPanel(
             horizontalArrangement = Arrangement.spacedBy(8.dp)
         ) {
             FilterChip(
-                selected = transform.flipH,
+                selected = transform.flipHActive,
                 onClick = onFlipH,
                 label = { Text("Flip H", maxLines = 1) },
                 modifier = Modifier.weight(1f)
             )
             FilterChip(
-                selected = transform.flipV,
+                selected = transform.flipVActive,
                 onClick = onFlipV,
                 label = { Text("Flip V", maxLines = 1) },
                 modifier = Modifier.weight(1f)
@@ -90,6 +91,14 @@ fun TransformPanel(
             onClick = onOpenCrop,
             modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
         ) { Text("Open crop tool - move and zoom", maxLines = 1) }
+
+        // Crop and orientation are baked in as steps; Restore clears them all.
+        if (!transform.isNeutral) {
+            OutlinedButton(
+                onClick = onRestore,
+                modifier = Modifier.fillMaxWidth().padding(top = 8.dp)
+            ) { Text("Restore original framing", maxLines = 1) }
+        }
 
         SectionLabel("Aspect ratio", Modifier.padding(top = 10.dp))
         Row(

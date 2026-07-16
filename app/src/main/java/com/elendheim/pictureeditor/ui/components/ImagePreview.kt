@@ -129,7 +129,10 @@ fun ImagePreview(
                                 detectTapGestures { onSelectLayer(layer.id) }
                             }
                         }
-                        .graphicsLayer { rotationZ = layer.rotationDeg }
+                        .graphicsLayer {
+                            rotationZ = layer.rotationDeg
+                            alpha = layer.opacity
+                        }
                         .then(if (selected) Modifier.border(2.dp, accent) else Modifier)
                 ) {
                     Image(

@@ -3,22 +3,22 @@ package com.elendheim.pictureeditor.model
 import kotlinx.serialization.Serializable
 
 /**
- * Geometry side of an edit: rotation in 90 degree steps, horizontal / vertical
- * flips, and an aspect ratio crop. Crop is a centred cut to the chosen ratio,
- * which is exactly what the social presets need.
+ * The geometry side of an edit: an ordered list of rotate / flip / crop steps
+ * plus the aspect ratio currently chosen for the crop frame. Keeping the steps
+ * in order is what lets a crop survive a later flip or rotation.
  */
 @Serializable
 data class Transform(
-    val rotationDeg: Float = 0f,
-    val flipH: Boolean = false,
-    val flipV: Boolean = false,
-    val aspect: AspectPreset = AspectPreset.ORIGINAL,
-    // The kept region after rotation and flips. null means the whole image.
-    val crop: NormRect? = null
+    val ops: List<GeoOp> = emptyList(),
+    val aspect: AspectPreset = AspectPreset.ORIGINAL
 ) {
-    val isNeutral: Boolean
-        get() = rotationDeg == 0f && !flipH && !flipV &&
-            aspect == AspectPreset.ORIGINAL && (crop == null || crop.isFull)
+    val isNeutral: Boolean get() = ops.isEmpty()
+
+    val hasCrop: Boolean get() = ops.any { it is GeoOp.Crop }
+
+    // Simple on/off hints for the flip chips. Parity of the flip steps.
+    val flipHActive: Boolean get() = ops.count { it is GeoOp.Flip && it.horizontal } % 2 == 1
+    val flipVActive: Boolean get() = ops.count { it is GeoOp.Flip && !it.horizontal } % 2 == 1
 }
 
 /**

@@ -105,65 +105,73 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         editState = editState.copy(adjust = a)
     }
 
-    fun setTransform(t: Transform) {
-        pushHistory()
-        editState = editState.copy(transform = t)
-    }
-
     fun setVignette(v: Vignette) {
         pushHistory()
         editState = editState.copy(vignette = v)
     }
 
     // --- transform helpers --------------------------------------------------
-    // Rotating or flipping would put an existing crop in the wrong place, so
-    // the crop is cleared back to the full frame when the geometry changes.
-    fun rotateBy(deltaDeg: Float) {
-        val t = editState.transform
-        val next = (t.rotationDeg + deltaDeg + 360f) % 360f
-        pushHistory()
-        editState = editState.copy(transform = t.copy(rotationDeg = next, crop = null))
-    }
-
-    fun toggleFlipH() {
+    // Each geometry change is a new step on the ordered list, so a crop added
+    // earlier is never lost when you rotate or flip afterwards.
+    private fun addOp(op: com.elendheim.pictureeditor.model.GeoOp) {
         pushHistory()
         val t = editState.transform
-        editState = editState.copy(transform = t.copy(flipH = !t.flipH, crop = null))
+        editState = editState.copy(transform = t.copy(ops = t.ops + op))
     }
 
-    fun toggleFlipV() {
-        pushHistory()
-        val t = editState.transform
-        editState = editState.copy(transform = t.copy(flipV = !t.flipV, crop = null))
-    }
+    fun rotateRight() = addOp(com.elendheim.pictureeditor.model.GeoOp.Rotate(cw = true))
+    fun rotateLeft() = addOp(com.elendheim.pictureeditor.model.GeoOp.Rotate(cw = false))
+    fun toggleFlipH() = addOp(com.elendheim.pictureeditor.model.GeoOp.Flip(horizontal = true))
+    fun toggleFlipV() = addOp(com.elendheim.pictureeditor.model.GeoOp.Flip(horizontal = false))
 
-    // Picking an aspect frames the middle of the photo straight away; the crop
-    // tool can then refine it. Original clears the crop.
+    // Picking an aspect frames the middle of the current photo. Re-picking an
+    // aspect replaces the previous aspect crop rather than stacking on it.
     fun setAspect(preset: com.elendheim.pictureeditor.model.AspectPreset) {
         val base = previewBitmap ?: return
-        val ratio = preset.ratio
         val t = editState.transform
+        val ratio = preset.ratio
+        // Drop any trailing crop that came from a previous aspect tap.
+        val baseOps = t.ops.dropLastWhile { it is com.elendheim.pictureeditor.model.GeoOp.Crop && it.fromAspect }
         if (ratio == null) {
             pushHistory()
-            editState = editState.copy(transform = t.copy(aspect = preset, crop = null))
+            editState = editState.copy(transform = t.copy(ops = baseOps, aspect = preset))
             return
         }
-        // Measure the rotated / flipped base so the centred crop is correct.
-        val rotated = ImageEngine.rotateFlip(base, t)
-        val rect = ImageEngine.centeredCrop(rotated.width, rotated.height, ratio)
-        if (rotated !== base) rotated.recycle()
+        // Measure the image with those base steps applied so the centred crop
+        // lands correctly.
+        val baseImg = ImageEngine.geometry(base, t.copy(ops = baseOps))
+        val rect = ImageEngine.centeredCrop(baseImg.width, baseImg.height, ratio)
+        baseImg.recycle()
         pushHistory()
-        editState = editState.copy(transform = t.copy(aspect = preset, crop = rect))
+        val newOps = baseOps + com.elendheim.pictureeditor.model.GeoOp.Crop(rect, fromAspect = true)
+        editState = editState.copy(transform = t.copy(ops = newOps, aspect = preset))
     }
 
-    // Called by the crop tool with the region the user framed.
+    // Called by the crop tool with the region framed on the current image. It
+    // is appended, so it applies on top of whatever is already there.
     fun setCrop(rect: com.elendheim.pictureeditor.model.NormRect) {
+        addOp(com.elendheim.pictureeditor.model.GeoOp.Crop(rect, fromAspect = false))
+    }
+
+    // Restore the original framing: clear every geometry step.
+    fun restoreOriginal() {
+        if (editState.transform.isNeutral) return
         pushHistory()
-        editState = editState.copy(transform = editState.transform.copy(crop = rect))
+        editState = editState.copy(
+            transform = com.elendheim.pictureeditor.model.Transform()
+        )
+        message = "Original framing restored"
     }
 
     // --- added picture layers ----------------------------------------------
+    // Up to eight added pictures on one photo keeps things responsive.
+    val maxLayers = 8
+
     fun addLayer(uri: Uri) {
+        if (layers.size >= maxLayers) {
+            message = "That is the most pictures you can add ($maxLayers)"
+            return
+        }
         busy = true
         viewModelScope.launch {
             val bmp = withContext(Dispatchers.IO) {
@@ -193,6 +201,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         val index = layers.indexOfFirst { it.id == id }
         if (index < 0) return
         val current = layers[index]
+        // Snapping is an accessibility aid; it can be turned off in settings.
         val nx = snapToGrid((current.center.x + dxNorm).coerceIn(0f, 1f))
         val ny = snapToGrid((current.center.y + dyNorm).coerceIn(0f, 1f))
         layers[index] = current.copy(
@@ -202,11 +211,19 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         )
     }
 
-    // Snap to 1/3, 1/2 and 2/3 when within a small threshold.
+    // Snap to 1/3, 1/2 and 2/3 when within a small threshold, if snapping is on.
     private fun snapToGrid(v: Float): Float {
+        if (!settings.snapToGrid) return v
         val lines = floatArrayOf(1f / 3f, 0.5f, 2f / 3f)
         for (line in lines) if (kotlin.math.abs(line - v) < 0.02f) return line
         return v
+    }
+
+    // Change the opacity of a specific added picture (0 clear, 1 solid).
+    fun setLayerOpacity(id: String, opacity: Float) {
+        val index = layers.indexOfFirst { it.id == id }
+        if (index < 0) return
+        layers[index] = layers[index].copy(opacity = opacity.coerceIn(0f, 1f))
     }
 
     // Change the colour adjustments of a specific added picture.
@@ -309,7 +326,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 val placed = layerList.mapNotNull { layer ->
                     val lb = ImageLoader.loadFull(context, layer.uri, maxDim = 2048)
                         ?: return@mapNotNull null
-                    PlacedLayer(lb, layer.center.x, layer.center.y, layer.scale, layer.rotationDeg, layer.adjust)
+                    PlacedLayer(lb, layer.center.x, layer.center.y, layer.scale, layer.rotationDeg, layer.adjust, layer.opacity)
                 }
                 val rendered = ImageEngine.render(full, state, placed)
                 full.recycle()

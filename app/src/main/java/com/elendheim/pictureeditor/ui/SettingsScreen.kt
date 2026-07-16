@@ -99,6 +99,11 @@ fun SettingsScreen(
                 subtitle = "Small vibration feedback where supported",
                 checked = settings.haptics
             ) { vm.updateSettings(settings.copy(haptics = it)) }
+            ToggleRow(
+                title = "Snap added pictures to grid",
+                subtitle = "Added pictures line up to a thirds grid; turn off for free placement",
+                checked = settings.snapToGrid
+            ) { vm.updateSettings(settings.copy(snapToGrid = it)) }
 
             HorizontalDivider(Modifier.padding(vertical = 12.dp))
 

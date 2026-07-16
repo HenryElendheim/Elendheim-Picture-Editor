@@ -60,13 +60,14 @@ fun CropScreen(
     onApply: (NormRect) -> Unit,
     onCancel: () -> Unit
 ) {
-    // Crop the rotated / flipped picture so the frame lines up with the base.
-    val rotated = remember(source, transform.rotationDeg, transform.flipH, transform.flipV) {
-        ImageEngine.rotateFlip(source, transform)
+    // Work on the fully processed picture (all prior steps applied), so the
+    // frame you draw lines up exactly with what is on screen.
+    val base = remember(source, transform) {
+        ImageEngine.geometry(source, transform)
     }
-    val iw = rotated.width.toFloat()
-    val ih = rotated.height.toFloat()
-    val imageBitmap = remember(rotated) { rotated.asImageBitmap() }
+    val iw = base.width.toFloat()
+    val ih = base.height.toFloat()
+    val imageBitmap = remember(base) { base.asImageBitmap() }
     val density = LocalDensity.current
 
     // On-screen aspect of the frame: the chosen ratio, or the picture's own.
@@ -94,15 +95,10 @@ fun CropScreen(
             val maxBw = min(1f, 1f / hFactor)
 
             val stateKey = "$areaW$areaH$ratio$iw$ih"
-            // Start from the existing crop, or a centred frame of this ratio.
+            // Start from a centred frame of this ratio over the current image.
             val start = remember(stateKey) {
-                val c = transform.crop
-                if (c != null && !c.isFull) {
-                    Triple((c.left + c.right) / 2f, (c.top + c.bottom) / 2f, c.width)
-                } else {
-                    val cc = ImageEngine.centeredCrop(iw.toInt(), ih.toInt(), ratio)
-                    Triple((cc.left + cc.right) / 2f, (cc.top + cc.bottom) / 2f, cc.width)
-                }
+                val cc = ImageEngine.centeredCrop(iw.toInt(), ih.toInt(), ratio)
+                Triple((cc.left + cc.right) / 2f, (cc.top + cc.bottom) / 2f, cc.width)
             }
             var cxN by remember(stateKey) { mutableFloatStateOf(start.first) }
             var cyN by remember(stateKey) { mutableFloatStateOf(start.second) }

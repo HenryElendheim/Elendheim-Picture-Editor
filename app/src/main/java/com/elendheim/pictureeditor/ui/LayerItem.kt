@@ -19,5 +19,6 @@ data class LayerItem(
     val center: NormPoint = NormPoint(0.5f, 0.5f),
     val scale: Float = 0.5f,
     val rotationDeg: Float = 0f,
-    val adjust: AdjustParams = AdjustParams()
+    val adjust: AdjustParams = AdjustParams(),
+    val opacity: Float = 1f
 )

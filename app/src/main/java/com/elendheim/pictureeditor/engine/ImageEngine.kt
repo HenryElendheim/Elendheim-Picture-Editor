@@ -12,6 +12,7 @@ import android.graphics.RectF
 import android.graphics.Shader
 import com.elendheim.pictureeditor.model.AdjustParams
 import com.elendheim.pictureeditor.model.EditState
+import com.elendheim.pictureeditor.model.GeoOp
 import com.elendheim.pictureeditor.model.NormRect
 import com.elendheim.pictureeditor.model.Transform
 import com.elendheim.pictureeditor.model.Vignette
@@ -30,7 +31,8 @@ data class PlacedLayer(
     val cy: Float,
     val scale: Float,
     val rotationDeg: Float,
-    val adjust: AdjustParams = AdjustParams()
+    val adjust: AdjustParams = AdjustParams(),
+    val opacity: Float = 1f
 )
 
 /**
@@ -172,38 +174,42 @@ object ImageEngine {
     }
 
     /**
-     * The base geometry for the preview: rotate, flip and crop, but no colour.
-     * The live preview colours are applied on top with a colour filter so
-     * dragging a slider never has to rebuild this bitmap.
+     * The base geometry for the preview and export: replay every rotate, flip
+     * and crop step in order on a copy of the source. No colour is applied here;
+     * the live preview colours ride on top as a colour filter so dragging a
+     * slider never has to rebuild this bitmap. The crop tool uses this too, so
+     * it always crops exactly what is on screen.
      */
     fun geometry(src: Bitmap, t: Transform): Bitmap {
-        val rotated = rotateFlip(src, t)
-        val crop = t.crop
-        if (crop == null || crop.isFull) {
-            return if (rotated === src) copyOf(src) else rotated
+        var current = src
+        for (op in t.ops) {
+            val next = applyOp(current, op)
+            // Recycle the previous intermediate, but never the caller's source.
+            if (current !== src && next !== current) current.recycle()
+            current = next
         }
-        val cropped = applyCrop(rotated, crop)
-        if (rotated !== src && rotated !== cropped) rotated.recycle()
-        return cropped
+        return if (current === src) copyOf(src) else current
     }
 
-    /** Rotation and flips only, no crop. Used by the interactive crop tool. */
-    fun rotateFlip(src: Bitmap, t: Transform): Bitmap {
-        if (t.rotationDeg == 0f && !t.flipH && !t.flipV) return src
-        val m = Matrix()
-        if (t.flipH) m.postScale(-1f, 1f)
-        if (t.flipV) m.postScale(1f, -1f)
-        if (t.rotationDeg != 0f) m.postRotate(t.rotationDeg)
-        return Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true)
-    }
-
-    // Cut the fractional rectangle out of the bitmap.
-    private fun applyCrop(src: Bitmap, rect: NormRect): Bitmap {
-        val x = (rect.left * src.width).toInt().coerceIn(0, src.width - 1)
-        val y = (rect.top * src.height).toInt().coerceIn(0, src.height - 1)
-        val w = (rect.width * src.width).toInt().coerceIn(1, src.width - x)
-        val h = (rect.height * src.height).toInt().coerceIn(1, src.height - y)
-        return Bitmap.createBitmap(src, x, y, w, h)
+    private fun applyOp(src: Bitmap, op: GeoOp): Bitmap = when (op) {
+        is GeoOp.Rotate -> {
+            val m = Matrix().apply { postRotate(if (op.cw) 90f else -90f) }
+            Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true)
+        }
+        is GeoOp.Flip -> {
+            val m = Matrix().apply {
+                if (op.horizontal) postScale(-1f, 1f) else postScale(1f, -1f)
+            }
+            Bitmap.createBitmap(src, 0, 0, src.width, src.height, m, true)
+        }
+        is GeoOp.Crop -> {
+            val r = op.rect
+            val x = (r.left * src.width).toInt().coerceIn(0, src.width - 1)
+            val y = (r.top * src.height).toInt().coerceIn(0, src.height - 1)
+            val w = (r.width * src.width).toInt().coerceIn(1, src.width - x)
+            val h = (r.height * src.height).toInt().coerceIn(1, src.height - y)
+            Bitmap.createBitmap(src, x, y, w, h)
+        }
     }
 
     // Copy so callers can always safely recycle the intermediate result.
@@ -233,6 +239,7 @@ object ImageEngine {
     private fun composite(canvas: Canvas, w: Int, h: Int, layers: List<PlacedLayer>) {
         for (layer in layers) {
             val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+            paint.alpha = (layer.opacity.coerceIn(0f, 1f) * 255).toInt()
             if (!layer.adjust.isNeutral) {
                 paint.colorFilter = ColorMatrixColorFilter(buildColorMatrix(layer.adjust))
             }

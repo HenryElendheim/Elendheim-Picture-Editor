@@ -13,6 +13,9 @@ data class AppSettings(
     val largeTapTargets: Boolean = false,
     val fineSliders: Boolean = false,
     val haptics: Boolean = true,
+    // Added pictures snap to a rule-of-thirds grid. On by default because it
+    // makes placement easier; can be turned off for full freedom.
+    val snapToGrid: Boolean = true,
     val defaultFormat: ExportFormat = ExportFormat.JPEG,
     val defaultQuality: Int = 95,
     // True once the intro splash has played -> it never shows again.
@@ -31,6 +34,7 @@ class SettingsStore(context: Context) {
         largeTapTargets = prefs.getBoolean(KEY_TAPS, false),
         fineSliders = prefs.getBoolean(KEY_FINE, false),
         haptics = prefs.getBoolean(KEY_HAPTICS, true),
+        snapToGrid = prefs.getBoolean(KEY_SNAP, true),
         defaultFormat = if (prefs.getString(KEY_FORMAT, "JPEG") == "PNG") {
             ExportFormat.PNG
         } else {
@@ -47,6 +51,7 @@ class SettingsStore(context: Context) {
             .putBoolean(KEY_TAPS, s.largeTapTargets)
             .putBoolean(KEY_FINE, s.fineSliders)
             .putBoolean(KEY_HAPTICS, s.haptics)
+            .putBoolean(KEY_SNAP, s.snapToGrid)
             .putString(KEY_FORMAT, s.defaultFormat.name)
             .putInt(KEY_QUALITY, s.defaultQuality)
             .putBoolean(KEY_INTRO, s.introSeen)
@@ -59,6 +64,7 @@ class SettingsStore(context: Context) {
         const val KEY_TAPS = "large_taps"
         const val KEY_FINE = "fine_sliders"
         const val KEY_HAPTICS = "haptics"
+        const val KEY_SNAP = "snap_to_grid"
         const val KEY_FORMAT = "default_format"
         const val KEY_QUALITY = "default_quality"
         const val KEY_INTRO = "intro_seen"

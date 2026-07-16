@@ -59,6 +59,7 @@ import com.elendheim.pictureeditor.model.BuiltInFilters
 import com.elendheim.pictureeditor.ui.components.AdjustPanel
 import com.elendheim.pictureeditor.ui.components.FiltersPanel
 import com.elendheim.pictureeditor.ui.components.ImagePreview
+import com.elendheim.pictureeditor.ui.components.LabeledSlider
 import com.elendheim.pictureeditor.ui.components.TransformPanel
 import com.elendheim.pictureeditor.ui.components.VignettePanel
 
@@ -172,8 +173,18 @@ fun EditorScreen(
                             .navigationBarsPadding()
                             .padding(top = 10.dp, bottom = 6.dp)
                     ) {
-                        if (vm.selectedLayer != null) {
+                        val selected = vm.selectedLayer
+                        if (selected != null) {
                             SelectedLayerBar(onRemove = { vm.deleteSelectedLayer() })
+                            LabeledSlider(
+                                label = "Opacity",
+                                value = selected.opacity,
+                                valueRange = 0f..1f,
+                                onValueChange = { vm.setLayerOpacity(selected.id, it) },
+                                resetValue = 1f,
+                                display = { "${(it * 100).toInt()}%" },
+                                modifier = Modifier.padding(horizontal = 16.dp)
+                            )
                         }
                         ToolBar(current = tool, onSelect = { tool = it })
                         // When an added picture is selected, Adjust and Examples
@@ -197,12 +208,13 @@ fun EditorScreen(
                                 )
                                 Tool.TRANSFORM -> TransformPanel(
                                     transform = vm.editState.transform,
-                                    onRotateLeft = { vm.rotateBy(-90f) },
-                                    onRotateRight = { vm.rotateBy(90f) },
+                                    onRotateLeft = { vm.rotateLeft() },
+                                    onRotateRight = { vm.rotateRight() },
                                     onFlipH = { vm.toggleFlipH() },
                                     onFlipV = { vm.toggleFlipV() },
                                     onAspect = { vm.setAspect(it) },
-                                    onOpenCrop = onOpenCrop
+                                    onOpenCrop = onOpenCrop,
+                                    onRestore = { vm.restoreOriginal() }
                                 )
                                 Tool.FILTERS -> FiltersPanel(
                                     builtIns = BuiltInFilters.all,
