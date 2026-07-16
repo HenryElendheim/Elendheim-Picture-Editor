@@ -13,8 +13,8 @@ android {
         applicationId = "com.elendheim.pictureeditor"
         minSdk = 26          // Android 8.0 and up -> covers the vast majority of devices.
         targetSdk = 34
-        versionCode = 1
-        versionName = "1.0"
+        versionCode = 2
+        versionName = "1.1"
 
         vectorDrawables { useSupportLibrary = true }
     }
