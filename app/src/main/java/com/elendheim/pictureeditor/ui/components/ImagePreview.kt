@@ -12,6 +12,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.size
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.key
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -30,7 +31,6 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import com.elendheim.pictureeditor.engine.ImageEngine
 import com.elendheim.pictureeditor.model.EditState
-import com.elendheim.pictureeditor.model.NormPoint
 import com.elendheim.pictureeditor.model.Vignette
 import com.elendheim.pictureeditor.ui.LayerItem
 import kotlin.math.hypot
@@ -39,8 +39,12 @@ import kotlin.math.roundToInt
 /**
  * The live canvas. It draws the edited base, then any added pictures on top.
  * Tap an added picture to select it (red outline), drag to move it and pinch to
- * resize or turn it. Tapping the empty canvas deselects and returns you to the
- * base picture. The colour edit rides on top as a filter so sliders stay smooth.
+ * resize or turn it - with a grid it snaps to. Tapping the empty canvas
+ * deselects and returns you to the base picture.
+ *
+ * Layer gestures are sent as deltas and applied to the picture's current
+ * position by the view model, which is what makes dragging stick instead of
+ * jumping back to where the picture started.
  */
 @Composable
 fun ImagePreview(
@@ -49,7 +53,7 @@ fun ImagePreview(
     layers: List<LayerItem>,
     selectedLayerId: String?,
     onSelectLayer: (String?) -> Unit,
-    onUpdateLayer: (String, NormPoint?, Float?, Float?) -> Unit,
+    onLayerGesture: (String, Float, Float, Float, Float) -> Unit,
     modifier: Modifier = Modifier
 ) {
     val geo = remember(source, state.transform) {
@@ -89,13 +93,22 @@ fun ImagePreview(
             if (!state.vignette.isNeutral) {
                 VignetteOverlay(state.vignette, Modifier.size(w, h))
             }
+            // Show the snap grid only while an added picture is selected.
+            if (selectedLayerId != null) {
+                GridOverlay(Modifier.size(w, h))
+            }
 
             layers.forEach { layer ->
+              key(layer.id) {
                 val lwPx = layer.scale * wPx
                 val lhPx = lwPx * layer.bitmap.height / layer.bitmap.width
                 val lw = with(density) { lwPx.toDp() }
                 val lh = with(density) { lhPx.toDp() }
                 val selected = layer.id == selectedLayerId
+                val layerFilter = remember(layer.adjust) {
+                    if (layer.adjust.isNeutral) null
+                    else ColorFilter.colorMatrix(ColorMatrix(ImageEngine.buildColorMatrix(layer.adjust)))
+                }
                 Box(
                     Modifier
                         .offset {
@@ -105,40 +118,45 @@ fun ImagePreview(
                             )
                         }
                         .size(lw, lh)
-                        // Gestures are read before the rotation so panning maps
+                        // Gestures read before the rotation so panning maps
                         // straight onto the base picture's axes.
                         .pointerInput(layer.id, selected) {
                             if (selected) {
                                 detectTransformGestures { _, pan, zoom, rot ->
-                                    val nc = NormPoint(
-                                        (layer.center.x + pan.x / wPx).coerceIn(0f, 1f),
-                                        (layer.center.y + pan.y / hPx).coerceIn(0f, 1f)
-                                    )
-                                    onUpdateLayer(
-                                        layer.id,
-                                        nc,
-                                        (layer.scale * zoom).coerceIn(0.05f, 3f),
-                                        layer.rotationDeg + rot
-                                    )
+                                    onLayerGesture(layer.id, pan.x / wPx, pan.y / hPx, zoom, rot)
                                 }
                             } else {
                                 detectTapGestures { onSelectLayer(layer.id) }
                             }
                         }
                         .graphicsLayer { rotationZ = layer.rotationDeg }
-                        .then(
-                            if (selected) Modifier.border(2.dp, accent) else Modifier
-                        )
+                        .then(if (selected) Modifier.border(2.dp, accent) else Modifier)
                 ) {
                     Image(
                         bitmap = layer.bitmap.asImageBitmap(),
                         contentDescription = "Added picture",
                         contentScale = ContentScale.Fit,
+                        colorFilter = layerFilter,
                         modifier = Modifier.fillMaxSize()
                     )
                 }
+              }
             }
         }
+    }
+}
+
+/** A faint rule-of-thirds grid that added pictures snap to. */
+@Composable
+private fun GridOverlay(modifier: Modifier) {
+    Canvas(modifier) {
+        val line = Color(0x33FFFFFF)
+        val w = size.width
+        val h = size.height
+        drawLine(line, Offset(w / 3f, 0f), Offset(w / 3f, h))
+        drawLine(line, Offset(2f * w / 3f, 0f), Offset(2f * w / 3f, h))
+        drawLine(line, Offset(0f, h / 3f), Offset(w, h / 3f))
+        drawLine(line, Offset(0f, 2f * h / 3f), Offset(w, 2f * h / 3f))
     }
 }
 

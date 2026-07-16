@@ -29,7 +29,8 @@ data class PlacedLayer(
     val cx: Float,
     val cy: Float,
     val scale: Float,
-    val rotationDeg: Float
+    val rotationDeg: Float,
+    val adjust: AdjustParams = AdjustParams()
 )
 
 /**
@@ -227,10 +228,14 @@ object ImageEngine {
         }
     }
 
-    // Draw each added picture layer over the base, centred and scaled.
+    // Draw each added picture layer over the base, centred, scaled and with its
+    // own colour adjustments baked in.
     private fun composite(canvas: Canvas, w: Int, h: Int, layers: List<PlacedLayer>) {
-        val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
         for (layer in layers) {
+            val paint = Paint(Paint.ANTI_ALIAS_FLAG or Paint.FILTER_BITMAP_FLAG)
+            if (!layer.adjust.isNeutral) {
+                paint.colorFilter = ColorMatrixColorFilter(buildColorMatrix(layer.adjust))
+            }
             val targetW = layer.scale * w
             val targetH = targetW * layer.bitmap.height / layer.bitmap.width
             val m = Matrix()

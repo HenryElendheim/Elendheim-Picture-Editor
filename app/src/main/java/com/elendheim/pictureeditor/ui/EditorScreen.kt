@@ -66,7 +66,7 @@ import com.elendheim.pictureeditor.ui.components.VignettePanel
 private enum class Tool(val label: String, val icon: ImageVector) {
     ADJUST("Adjust", Icons.Filled.Tune),
     TRANSFORM("Transform", Icons.Filled.Crop),
-    FILTERS("Filters", Icons.Filled.PhotoFilter),
+    FILTERS("Examples", Icons.Filled.PhotoFilter),
     VIGNETTE("Vignette", Icons.Filled.Lens)
 }
 
@@ -149,8 +149,8 @@ fun EditorScreen(
                             layers = vm.layers,
                             selectedLayerId = vm.selectedLayerId,
                             onSelectLayer = { vm.selectLayer(it) },
-                            onUpdateLayer = { id, center, scale, rot ->
-                                vm.updateLayer(id, center, scale, rot)
+                            onLayerGesture = { id, dx, dy, zoom, rot ->
+                                vm.moveLayer(id, dx, dy, zoom, rot)
                             },
                             modifier = Modifier.fillMaxSize()
                         )
@@ -176,6 +176,9 @@ fun EditorScreen(
                             SelectedLayerBar(onRemove = { vm.deleteSelectedLayer() })
                         }
                         ToolBar(current = tool, onSelect = { tool = it })
+                        // When an added picture is selected, Adjust and Examples
+                        // change that picture instead of the base.
+                        val editingLayer = vm.selectedLayer
                         Column(
                             Modifier
                                 .fillMaxWidth()
@@ -185,8 +188,11 @@ fun EditorScreen(
                         ) {
                             when (tool) {
                                 Tool.ADJUST -> AdjustPanel(
-                                    adjust = vm.editState.adjust,
-                                    onChange = { vm.setAdjust(it) },
+                                    adjust = editingLayer?.adjust ?: vm.editState.adjust,
+                                    onChange = {
+                                        if (editingLayer != null) vm.setLayerAdjust(editingLayer.id, it)
+                                        else vm.setAdjust(it)
+                                    },
                                     fine = vm.settings.fineSliders
                                 )
                                 Tool.TRANSFORM -> TransformPanel(
@@ -201,7 +207,10 @@ fun EditorScreen(
                                 Tool.FILTERS -> FiltersPanel(
                                     builtIns = BuiltInFilters.all,
                                     custom = vm.customFilters,
-                                    onApply = { vm.applyFilter(it) },
+                                    onApply = {
+                                        if (editingLayer != null) vm.applyFilterToLayer(editingLayer.id, it)
+                                        else vm.applyFilter(it)
+                                    },
                                     onDelete = { vm.deleteFilter(it.id) },
                                     onSaveCurrent = { showSaveFilter = true }
                                 )
@@ -317,7 +326,7 @@ private fun SelectedLayerBar(onRemove: () -> Unit) {
         horizontalArrangement = Arrangement.SpaceBetween
     ) {
         Text(
-            "Editing added picture - tap the photo to deselect",
+            "Editing added picture - Adjust and Examples change this one",
             color = MaterialTheme.colorScheme.onSurfaceVariant,
             fontSize = 12.sp,
             maxLines = 1

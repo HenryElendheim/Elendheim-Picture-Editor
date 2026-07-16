@@ -185,15 +185,41 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
         selectedLayerId = id
     }
 
-    fun updateLayer(id: String, center: com.elendheim.pictureeditor.model.NormPoint? = null, scale: Float? = null, rotationDeg: Float? = null) {
+    // Move / resize / rotate the layer by a gesture delta. Reading the current
+    // value here (not in the gesture closure) is what makes dragging actually
+    // stick instead of snapping back every frame. Centres snap to the thirds
+    // and middle grid lines when they get close.
+    fun moveLayer(id: String, dxNorm: Float, dyNorm: Float, zoom: Float, rotDelta: Float) {
         val index = layers.indexOfFirst { it.id == id }
         if (index < 0) return
         val current = layers[index]
+        val nx = snapToGrid((current.center.x + dxNorm).coerceIn(0f, 1f))
+        val ny = snapToGrid((current.center.y + dyNorm).coerceIn(0f, 1f))
         layers[index] = current.copy(
-            center = center ?: current.center,
-            scale = scale ?: current.scale,
-            rotationDeg = rotationDeg ?: current.rotationDeg
+            center = com.elendheim.pictureeditor.model.NormPoint(nx, ny),
+            scale = (current.scale * zoom).coerceIn(0.05f, 3f),
+            rotationDeg = current.rotationDeg + rotDelta
         )
+    }
+
+    // Snap to 1/3, 1/2 and 2/3 when within a small threshold.
+    private fun snapToGrid(v: Float): Float {
+        val lines = floatArrayOf(1f / 3f, 0.5f, 2f / 3f)
+        for (line in lines) if (kotlin.math.abs(line - v) < 0.02f) return line
+        return v
+    }
+
+    // Change the colour adjustments of a specific added picture.
+    fun setLayerAdjust(id: String, adjust: AdjustParams) {
+        val index = layers.indexOfFirst { it.id == id }
+        if (index < 0) return
+        layers[index] = layers[index].copy(adjust = adjust)
+    }
+
+    // Apply a saved look to a specific added picture.
+    fun applyFilterToLayer(id: String, preset: FilterPreset) {
+        setLayerAdjust(id, preset.adjust)
+        message = "Applied ${preset.name} to the added picture"
     }
 
     fun deleteSelectedLayer() {
@@ -283,7 +309,7 @@ class EditorViewModel(app: Application) : AndroidViewModel(app) {
                 val placed = layerList.mapNotNull { layer ->
                     val lb = ImageLoader.loadFull(context, layer.uri, maxDim = 2048)
                         ?: return@mapNotNull null
-                    PlacedLayer(lb, layer.center.x, layer.center.y, layer.scale, layer.rotationDeg)
+                    PlacedLayer(lb, layer.center.x, layer.center.y, layer.scale, layer.rotationDeg, layer.adjust)
                 }
                 val rendered = ImageEngine.render(full, state, placed)
                 full.recycle()

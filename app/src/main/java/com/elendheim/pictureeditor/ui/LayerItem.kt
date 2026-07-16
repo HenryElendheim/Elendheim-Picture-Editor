@@ -2,13 +2,15 @@ package com.elendheim.pictureeditor.ui
 
 import android.graphics.Bitmap
 import android.net.Uri
+import com.elendheim.pictureeditor.model.AdjustParams
 import com.elendheim.pictureeditor.model.NormPoint
 
 /**
  * One added picture placed over the base image. The preview bitmap is used on
  * screen; the uri is kept so the full resolution version can be reloaded at
  * export. Position and size are fractions of the base so placement is the same
- * at any resolution.
+ * at any resolution. Each added picture carries its own colour adjustments, so
+ * selecting it and moving a slider changes that picture, not the base.
  */
 data class LayerItem(
     val id: String,
@@ -16,5 +18,6 @@ data class LayerItem(
     val bitmap: Bitmap,
     val center: NormPoint = NormPoint(0.5f, 0.5f),
     val scale: Float = 0.5f,
-    val rotationDeg: Float = 0f
+    val rotationDeg: Float = 0f,
+    val adjust: AdjustParams = AdjustParams()
 )

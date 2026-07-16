@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!--
+  The launcher icon is the Elendheim logo used as-is. It fills the whole icon
+  as the background layer; the foreground is left transparent. The subject sits
+  centred with dark padding, so a launcher's circle or squircle mask only trims
+  the dark corners and never the artwork.
+-->
 <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
-    <background android:drawable="@color/ic_launcher_background" />
-    <foreground android:drawable="@drawable/ic_launcher_foreground" />
+    <background android:drawable="@drawable/elendheim_logo" />
+    <foreground android:drawable="@android:color/transparent" />
 </adaptive-icon>

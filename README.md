@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/logo.png" alt="Elendheim Picture Editor logo" width="160" />
+</p>
+
 # Elendheim Picture Editor
 
 A private, non-destructive photo editor for Android. Adjust and filter your

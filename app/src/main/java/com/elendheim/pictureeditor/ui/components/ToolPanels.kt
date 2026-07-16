@@ -145,7 +145,7 @@ fun FiltersPanel(
         FilledTonalButton(
             onClick = onSaveCurrent,
             modifier = Modifier.fillMaxWidth()
-        ) { Text("Save current look as a filter") }
+        ) { Text("Save current look as an example") }
 
         SectionLabel("Premade", Modifier.padding(top = 10.dp))
         Row(
